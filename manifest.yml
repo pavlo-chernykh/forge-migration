@@ -1,3 +1,11 @@
+permissions:
+  scopes:
+    - read:jira-work
+    - write:jira-work
+  external:
+    fetch:
+      backend:
+        - address: "https://api.github.com"
 modules:
   jira:adminPage:
     - key: pavlo-c-forge-migration-hello-world-admin-page
@@ -6,9 +14,14 @@ modules:
         function: resolver
       render: native
       title: pavlo-c-forge-migration
+  webtrigger:
+    - key: github-webhook
+      function: webhook
   function:
     - key: resolver
       handler: index.handler
+    - key: webhook
+      handler: backend/webtrigger.run
 resources:
   - key: main
     path: src/frontend/index.jsx

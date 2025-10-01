@@ -22,33 +22,23 @@ const statusChip = (s) => {
 };
 
 function App() {
-  // Auth
   const [saved, setSaved] = useState(false);
   const [token, setToken] = useState("");
   const [secret, setSecret] = useState("");
-
-  // Navigation between the two required screens
-  const [activeView, setActiveView] = useState("issue"); // 'issue' | 'connected'
-
-  // Issue picking
+  const [activeView, setActiveView] = useState("issue");
   const [projectKey, setProjectKey] = useState("");
   const [issues, setIssues] = useState([]);
   const [issueKey, setIssueKey] = useState("");
   const [issueInfo, setIssueInfo] = useState(null);
-
-  // Repos / PRs
   const [repos, setRepos] = useState([]);
-  const [selectedRepo, setSelectedRepo] = useState(null); // "owner/name"
+  const [selectedRepo, setSelectedRepo] = useState(null);
   const [repoInfo, setRepoInfo] = useState(null);
   const [prs, setPrs] = useState([]);
   const [me, setMe] = useState(null);
   const [matchIndex, setMatchIndex] = useState(-1);
   const [loadingRepo, setLoadingRepo] = useState(false);
-
-  // Status line
   const [msg, setMsg] = useState("");
 
-  // On mount → read auth state
   useEffect(() => {
     (async () => {
       try {
@@ -58,7 +48,6 @@ function App() {
     })();
   }, []);
 
-  // Fetch minimal issue info when issueKey changes (summary/status/assignee)
   useEffect(() => {
     (async () => {
       const k = String(issueKey || "").trim();
@@ -70,8 +59,6 @@ function App() {
       } catch {}
     })();
   }, [issueKey]);
-
-  // --- Actions ---
 
   const saveCreds = async () => {
     try {
@@ -239,8 +226,6 @@ function App() {
       setMsg(String(e?.message || e));
     }
   };
-
-  // --- UI blocks ---
 
   const AuthBlock = !saved && (
     <SectionMessage title="Auth" appearance="information">
@@ -497,11 +482,8 @@ function App() {
       {!!msg && <Text>{msg}</Text>}
 
       {AuthBlock}
-
       {NavBar}
-
       {IssueScreen}
-
       {ConnectedScreen}
 
       {saved && (

@@ -228,6 +228,14 @@ function App() {
     }
   };
 
+  const statusChip = (s) => {
+    const t = String(s || "").toLowerCase();
+    if (/done|closed|resolved/.test(t)) return "✅ Done";
+    if (/progress|in\s*progress/.test(t)) return "🟡 In Progress";
+    if (/todo|to\s*do|backlog/.test(t)) return "⭕️ To Do";
+    return s || "—";
+  };
+
   // --- UI blocks ---
 
   const AuthBlock = !saved && (
@@ -301,7 +309,8 @@ function App() {
           <Stack space="none">
             {issues.map((it) => (
               <Text key={it.key} onClick={() => chooseIssue(it.key)}>
-                {it.key} — {it.summary || "(no summary)"}
+                {it.key} — {it.summary || "(no summary)"} ·{" "}
+                {statusChip(it.status)}
               </Text>
             ))}
           </Stack>

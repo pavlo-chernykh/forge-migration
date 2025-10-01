@@ -1,5 +1,4 @@
-// src/frontend/index.jsx
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import ForgeReconciler, {
   Text,
   Textfield,
@@ -48,7 +47,6 @@ function App() {
   // Status line
   const [msg, setMsg] = useState("");
 
-  // On mount → read auth state
   useEffect(() => {
     (async () => {
       try {
@@ -58,7 +56,6 @@ function App() {
     })();
   }, []);
 
-  // Fetch minimal issue info when issueKey changes (summary/status/assignee)
   useEffect(() => {
     (async () => {
       const k = String(issueKey || "").trim();
@@ -70,8 +67,6 @@ function App() {
       } catch {}
     })();
   }, [issueKey]);
-
-  // --- Actions ---
 
   const saveCreds = async () => {
     try {

@@ -30,7 +30,6 @@ resolver.define("getRepoBundle", async ({ payload }) => {
 
   if (!owner || !repo) throw new Error("owner, repo are required");
 
-  // Only verify the issue if a key was provided
   if (issueKey) {
     await getIssue(issueKey); // asUser() validation
   }
@@ -89,12 +88,6 @@ resolver.define("getIssueInfo", async ({ payload }) => {
   const key = String(payload?.issueKey || "").trim();
   const j = await getIssue(key); // uses asUser()
   const f = j?.fields || {};
-  console.log("[BE] getIssueInfo", {
-    key: j?.key,
-    summary: f.summary || "",
-    status: f.status?.name || "",
-    assignee: f.assignee?.displayName || "",
-  });
 
   if (!j?.key) throw new Error(`Issue ${key} not found`);
   return {
@@ -109,12 +102,7 @@ resolver.define("listRepos", async ({ payload }) => {
   const issueKey = String(payload?.issueKey || "").trim();
   const wantMatch = ISSUE_RE.test(issueKey);
 
-  console.log("[BE] listRepos start", {
-    wantMatch,
-    issueKey: wantMatch ? issueKey : "(none)",
-  });
-
-  const raw = await listRepos(); // GitHub API
+  const raw = await listRepos();
   let items = (Array.isArray(raw) ? raw : [])
     .map((x) => ({
       id: x?.id ?? `${x?.owner?.login || ""}-${x?.name || ""}`,
@@ -131,7 +119,6 @@ resolver.define("listRepos", async ({ payload }) => {
     .filter((r) => r.full_name);
 
   if (wantMatch) {
-    // Check each repo’s open PRs and keep only those with a PR matching the Issue Key.
     const checked = await Promise.all(
       items.map(async (r) => {
         const prs = await listOpenPRs(r.owner, r.name);
@@ -139,7 +126,6 @@ resolver.define("listRepos", async ({ payload }) => {
         return {
           ...r,
           hasMatch: Boolean(match),
-          // small hint you can show in the list (optional)
           firstMatch: match
             ? {
                 number: match.number,
@@ -153,30 +139,24 @@ resolver.define("listRepos", async ({ payload }) => {
     items = checked.filter((r) => r.hasMatch);
   }
 
-  console.log("[BE] listRepos done", {
-    count: items.length,
-    filtered: wantMatch,
-  });
   return items;
 });
 
 resolver.define("getRepoAndPR", async ({ payload }) => {
   const { owner, repo, issueKey } = payload || {};
-  console.log("[BE] getRepoAndPR", { owner, repo, issueKey });
 
-  if (!owner || !repo || !issueKey)
+  if (!owner || !repo || !issueKey) {
     throw new Error("owner, repo, issueKey are required");
+  }
 
-  // ensure issue exists (for clearer errors)
   await getIssue(issueKey);
 
   const prs = await listOpenPRs(owner, repo);
-  console.log("[BE] open PRs count", Array.isArray(prs) ? prs.length : "n/a");
 
   const pr = Array.isArray(prs)
     ? prs.find((p) => prMatchesIssue(p, issueKey))
     : null;
-  console.log("[BE] matched PR?", !!pr);
+
   return { pr: pr || null };
 });
 
@@ -198,7 +178,7 @@ resolver.define("mergePR", async ({ payload }) => {
 
 resolver.define("getAuthState", async () => {
   const [token, secret] = await Promise.all([getPAT(), getWebhookSecret()]);
-  console.log("[BE] getAuthState", { hasToken: !!token, hasSecret: !!secret });
+
   return { hasToken: !!token, hasSecret: !!secret };
 });
 
@@ -227,25 +207,12 @@ resolver.define("listRecentIssues", async ({ payload }) => {
   }
 
   const data = await res.json();
-  // Normalize possible shapes safely:
-  // - Classic: { issues: [{ key, fields: { summary } }, ...] }
-  // - Some previews: { results: [{ key, fields: { summary } }] } OR { results: [{ issue: { key, fields } }] }
   const rawIssues = Array.isArray(data.issues)
     ? data.issues
     : Array.isArray(data.results)
     ? data.results.map((r) => (r.issue ? r.issue : r))
     : [];
 
-  // Map defensively; never assume fields exists
-  // console.log(
-  //   "RETURN:",
-  //   rawIssues
-  //     .map((i) => ({
-  //       key: i?.key,
-  //       summary: i?.fields?.summary ?? "",
-  //     }))
-  //     .filter((x) => Boolean(x.key))
-  // );
   return rawIssues
     .map((i) => ({
       key: i?.key,
@@ -265,7 +232,6 @@ async function pickIssueTypeForProject(projectKey) {
   const meta = await res.json();
   const types = meta?.projects?.[0]?.issuetypes || [];
 
-  // Prefer "Task" (team-managed sometimes calls it "Task"), else first
   const chosen = types.find((t) => /task/i.test(t.name)) || types[0];
   if (!chosen)
     throw new Error(`No creatable issue types for project ${projectKey}`);
@@ -274,7 +240,6 @@ async function pickIssueTypeForProject(projectKey) {
 
 resolver.define("createTestIssue", async ({ payload }) => {
   const { projectKey, summary } = payload || {};
-  console.log("[BE] createTestIssue", { projectKey, summary });
 
   const issueType = await pickIssueTypeForProject(projectKey);
 

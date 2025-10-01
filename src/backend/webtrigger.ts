@@ -41,7 +41,6 @@ export const run = async (req: any) => {
         why = `len-mismatch sha256 got:${sig256.length} cmp:${cmp.length}`;
       }
     } else if (sigSha1) {
-      // legacy header some repos still send
       const cmp = "sha1=" + hmacHex("sha1", String(secret), raw);
       if (cmp.length === sigSha1.length) {
         try {
@@ -71,7 +70,6 @@ export const run = async (req: any) => {
     const title = event.pull_request.title || "";
     const ref = event.pull_request.head?.ref || "";
     const key = extractIssueKey(`${title} ${ref}`);
-    console.log("[WH] merged PR", { title, ref, key });
     if (key) {
       try {
         await transitionToDone(key);
@@ -81,14 +79,7 @@ export const run = async (req: any) => {
           body: `transition error: ${e?.message || e}`,
         };
       }
-    } else {
-      console.log("[WH] no issue key found in title/branch");
     }
-  } else {
-    console.log("[WH] event ignored", {
-      action: event?.action,
-      merged: event?.pull_request?.merged,
-    });
   }
   return { statusCode: 200, body: "ok" };
 };

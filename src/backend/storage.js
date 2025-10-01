@@ -4,7 +4,6 @@ const GH_PAT_KEY = "gh_pat";
 const GH_WEBHOOK_SECRET_KEY = "gh_webhook_secret";
 
 export const savePAT = async (token) => {
-  console.log("token in savePAT: ", token);
   const v = String(token || "").trim();
   if (!v) throw new Error("Token is required");
   await storage.set(GH_PAT_KEY, v);

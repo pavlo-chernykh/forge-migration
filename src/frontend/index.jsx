@@ -341,118 +341,140 @@ function App() {
         </Inline>
 
         {Array.isArray(repos) && repos.length > 0 && (
-          <Stack space="small">
-            {repos.map((r) => (
-              <Stack key={r.id} space="none">
-                <Inline space="small">
-                  <Text>
-                    {r.full_name} — {r.language || "n/a"} (
-                    {r.visibility || "public"}) · default:{" "}
-                    {r.default_branch || "n/a"}
-                  </Text>
-                  <Button onClick={() => pickRepo(r.full_name)}>
-                    {selectedRepo === r.full_name ? "Refresh" : "Select"}
-                  </Button>
-                </Inline>
-
-                {selectedRepo === r.full_name && (
+          <Stack space="large">
+            {repos.map((r) => {
+              const isSelected = selectedRepo === r.full_name;
+              return (
+                <SectionMessage
+                  key={r.id}
+                  title={r.full_name}
+                  appearance={isSelected ? "confirmation" : "information"}
+                >
                   <Stack space="small">
-                    {loadingRepo && <Text>Loading repository & PRs…</Text>}
+                    {/* meta row */}
+                    <Text>
+                      {r.language || "n/a"} ({r.visibility || "public"}) ·
+                      default: {r.default_branch || "n/a"}
+                    </Text>
 
-                    {repoInfo && (
-                      <SectionMessage
-                        title="Repository"
-                        appearance="information"
-                      >
-                        <Stack space="none">
-                          <Text>
-                            <Link href={repoInfo.html_url} openNewTab>
-                              {repoInfo.full_name}
+                    {/* hint + action */}
+                    <Inline space="small">
+                      {r.firstMatch?.number && (
+                        <Text>
+                          Matched PR #{r.firstMatch.number}{" "}
+                          {r.firstMatch.html_url && (
+                            <Link href={r.firstMatch.html_url} openNewTab>
+                              (open)
                             </Link>
-                          </Text>
-                          <Text>
-                            Language: {repoInfo.language || "n/a"} · Default
-                            branch: {repoInfo.default_branch || "n/a"} ·
-                            Visibility: {repoInfo.visibility || "public"}
-                          </Text>
-                          <Text>
-                            Stars: {repoInfo.stargazers_count} · Forks:{" "}
-                            {repoInfo.forks_count} · Open issues:{" "}
-                            {repoInfo.open_issues_count}
-                          </Text>
-                          <Text>Updated: {repoInfo.updated_at || "n/a"}</Text>
-                        </Stack>
-                      </SectionMessage>
-                    )}
+                          )}
+                        </Text>
+                      )}
+                      <Button onClick={() => pickRepo(r.full_name)}>
+                        {isSelected ? "Refresh" : "Select"}
+                      </Button>
+                    </Inline>
 
-                    {Array.isArray(prs) && prs.length === 0 && !loadingRepo && (
-                      <Text>Have no opened pull requests.</Text>
-                    )}
+                    {/* selected repo expands inline here */}
+                    {isSelected && (
+                      <Stack space="medium">
+                        {/* a bit of breathing room */}
+                        <Text> </Text>
 
-                    {Array.isArray(prs) && prs.length > 0 && (
-                      <Stack space="small">
-                        {prs.map((p, idx) => {
-                          const isMatch = idx === matchIndex;
-                          const isOwn =
-                            me &&
-                            p?.author &&
-                            me.toLowerCase() === p.author.toLowerCase();
-                          return (
-                            <SectionMessage
-                              key={p.number}
-                              title={
-                                isMatch
-                                  ? `PR #${p.number} (matches ${
-                                      issueKey || "no key"
-                                    })`
-                                  : `PR #${p.number}`
-                              }
-                              appearance={
-                                isMatch ? "confirmation" : "information"
-                              }
-                            >
-                              <Stack space="small">
-                                <Text>
-                                  <Link href={p.html_url} openNewTab>
-                                    {p.title || p.html_url}
-                                  </Link>
-                                </Text>
-                                <Text>
-                                  Branch: {p.head_ref || "(unknown)"} · Author:{" "}
-                                  {p.author || "(unknown)"}
-                                </Text>
-                                <Inline space="small">
-                                  {isOwn ? (
-                                    <Button
-                                      isDisabled
-                                      tooltip="You can't approve your own PR"
-                                    >
-                                      Approve
-                                    </Button>
-                                  ) : (
-                                    <Button
-                                      onClick={() => approveNumber(p.number)}
-                                    >
-                                      Approve
-                                    </Button>
-                                  )}
-                                  <Button
-                                    appearance="primary"
-                                    onClick={() => mergeNumber(p.number)}
-                                  >
-                                    Merge
-                                  </Button>
-                                </Inline>
-                              </Stack>
-                            </SectionMessage>
-                          );
-                        })}
+                        {/* repo details (plain, to avoid nested cards clutter) */}
+                        {repoInfo && (
+                          <Stack space="xsmall">
+                            <Text>
+                              <Link href={repoInfo.html_url} openNewTab>
+                                {repoInfo.full_name}
+                              </Link>
+                            </Text>
+                            <Text>
+                              Language: {repoInfo.language || "n/a"} · Default
+                              branch: {repoInfo.default_branch || "n/a"} ·
+                              Visibility: {repoInfo.visibility || "public"}
+                            </Text>
+                            <Text>
+                              Stars: {repoInfo.stargazers_count} · Forks:{" "}
+                              {repoInfo.forks_count} · Open issues:{" "}
+                              {repoInfo.open_issues_count}
+                            </Text>
+                            <Text>Updated: {repoInfo.updated_at || "n/a"}</Text>
+                          </Stack>
+                        )}
+
+                        {/* PRs */}
+                        {Array.isArray(prs) && prs.length === 0 && (
+                          <Text>Have no opened pull requests.</Text>
+                        )}
+
+                        {Array.isArray(prs) && prs.length > 0 && (
+                          <Stack space="medium">
+                            {prs.map((p, idx) => {
+                              const isMatch = idx === matchIndex;
+                              const isOwn =
+                                me &&
+                                p?.author &&
+                                me.toLowerCase() === p.author.toLowerCase();
+                              return (
+                                <SectionMessage
+                                  key={p.number}
+                                  title={
+                                    isMatch
+                                      ? `PR #${p.number} (matches ${
+                                          issueKey || "no key"
+                                        })`
+                                      : `PR #${p.number}`
+                                  }
+                                  appearance={
+                                    isMatch ? "confirmation" : "information"
+                                  }
+                                >
+                                  <Stack space="small">
+                                    <Text>
+                                      <Link href={p.html_url} openNewTab>
+                                        {p.title || p.html_url}
+                                      </Link>
+                                    </Text>
+                                    <Text>
+                                      Branch: {p.head_ref || "(unknown)"} ·
+                                      Author: {p.author || "(unknown)"}
+                                    </Text>
+                                    <Inline space="small">
+                                      {isOwn ? (
+                                        <Button
+                                          isDisabled
+                                          tooltip="You can't approve your own PR"
+                                        >
+                                          Approve
+                                        </Button>
+                                      ) : (
+                                        <Button
+                                          onClick={() =>
+                                            approveNumber(p.number)
+                                          }
+                                        >
+                                          Approve
+                                        </Button>
+                                      )}
+                                      <Button
+                                        appearance="primary"
+                                        onClick={() => mergeNumber(p.number)}
+                                      >
+                                        Merge
+                                      </Button>
+                                    </Inline>
+                                  </Stack>
+                                </SectionMessage>
+                              );
+                            })}
+                          </Stack>
+                        )}
                       </Stack>
                     )}
                   </Stack>
-                )}
-              </Stack>
-            ))}
+                </SectionMessage>
+              );
+            })}
           </Stack>
         )}
       </Stack>

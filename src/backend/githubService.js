@@ -20,6 +20,7 @@ async function gh(path, init = {}) {
 }
 
 export const getRepo = (owner, repo) => gh(`/repos/${owner}/${repo}`);
+
 export const whoAmI = () => gh(`/user`);
 
 export const listRepos = () => gh("/user/repos?per_page=50");

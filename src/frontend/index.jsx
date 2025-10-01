@@ -506,20 +506,6 @@ function App() {
 
       {saved && (
         <Inline space="small">
-          <Button
-            appearance="subtle"
-            onClick={() => {
-              setActiveView("issue");
-              setRepos([]);
-              setSelectedRepo(null);
-              setRepoInfo(null);
-              setPrs([]);
-              setMatchIndex(-1);
-              setMsg("");
-            }}
-          >
-            Back to Issue
-          </Button>
           <Button appearance="warning" onClick={reset}>
             Reset credentials (clear storage)
           </Button>

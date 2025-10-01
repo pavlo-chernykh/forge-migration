@@ -61,22 +61,11 @@ export const run = async (req: any) => {
     why = "no-secret";
   }
 
-  console.log("[WH] received", {
-    has256: !!sig256,
-    hasSha1: !!sigSha1,
-    rawType: typeof req.body,
-    rawLen: raw.length,
-    secretLen: secret ? String(secret).length : 0,
-    match,
-    why,
-  });
-
   if (!match) {
     return { statusCode: 401, body: "invalid signature" };
   }
 
   const event = JSON.parse(raw);
-  console.log("[WH] event", event);
 
   if (event?.action === "closed" && event?.pull_request?.merged) {
     const title = event.pull_request.title || "";

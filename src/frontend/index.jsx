@@ -6,182 +6,82 @@ import ForgeReconciler, {
   SectionMessage,
   Inline,
   Stack,
-  Table,
-  Head,
-  Row,
-  Cell,
   Link,
 } from "@forge/react";
 import { invoke } from "@forge/bridge";
 
 const ISSUE_RE = /^[A-Z][A-Z0-9_]+-\d+$/;
 
-const App = () => {
+function App() {
+  // Auth
   const [saved, setSaved] = useState(false);
   const [token, setToken] = useState("");
   const [secret, setSecret] = useState("");
 
-  const [issueKey, setIssueKey] = useState("");
-  const [repos, setRepos] = useState([]);
-  const [selected, setSelected] = useState(null);
-  const [pr, setPr] = useState(null);
-  const [msg, setMsg] = useState("");
+  // Navigation between the two required screens
+  const [activeView, setActiveView] = useState("issue"); // 'issue' | 'connected'
 
+  // Issue picking
   const [projectKey, setProjectKey] = useState("");
   const [issues, setIssues] = useState([]);
+  const [issueKey, setIssueKey] = useState("");
+  const [issueInfo, setIssueInfo] = useState(null);
 
+  // Repos / PRs
+  const [repos, setRepos] = useState([]);
+  const [selectedRepo, setSelectedRepo] = useState(null); // "owner/name"
+  const [repoInfo, setRepoInfo] = useState(null);
+  const [prs, setPrs] = useState([]);
+  const [me, setMe] = useState(null);
+  const [matchIndex, setMatchIndex] = useState(-1);
+
+  // Status line
+  const [msg, setMsg] = useState("");
+
+  // State
+  const [loadingRepo, setLoadingRepo] = useState(false);
+
+  // On mount → read auth state
   useEffect(() => {
     (async () => {
       try {
         const s = await invoke("getAuthState");
-        console.log("[UI] getAuthState", s);
-        setSaved(Boolean(s?.hasToken));
+        setSaved(Boolean(s?.hasToken && s?.hasSecret));
       } catch (e) {
-        console.warn("[UI] getAuthState error", e);
+        // non-fatal
       }
     })();
   }, []);
 
-  const save = async () => {
-    try {
-      console.log("[UI] save token/secret");
-      await invoke("saveToken", { token });
-      if (!secret) {
-        setMsg("Webhook secret is required (from your GitHub webhook).");
-        return;
+  // Whenever issueKey changes, fetch a tiny issue summary/status (spec requires "get issue info")
+  useEffect(() => {
+    (async () => {
+      const k = String(issueKey || "").trim();
+      setIssueInfo(null);
+      if (!k) return;
+      try {
+        const info = await invoke("getIssueInfo", { issueKey: k });
+        setIssueInfo(info || null);
+      } catch {
+        // ignore display errors here; user might be typing
       }
+    })();
+  }, [issueKey]);
+
+  // --- Actions ---
+
+  const saveCreds = async () => {
+    try {
+      if (!token) return setMsg("GitHub PAT is required.");
+      if (!secret) return setMsg("Webhook secret is required.");
+      setMsg("Saving…");
+      await invoke("saveToken", { token });
       await invoke("saveWebhookSecret", { secret });
       setSaved(true);
-      setMsg("");
+      setMsg("Saved.");
     } catch (e) {
-      console.error("[UI] save error", e);
       setMsg(`Save error: ${e?.message || e}`);
     }
-  };
-
-  const loadRepos = async () => {
-    setMsg("Loading repos…");
-    try {
-      console.log("[UI] listRepos");
-      const r = await invoke("listRepos");
-      setRepos(r);
-      setMsg("");
-    } catch (e) {
-      console.error("[UI] listRepos error", e);
-      setMsg(`Error: ${e?.message || e}`);
-    }
-  };
-
-  const pickRepo = async (fullName) => {
-    try {
-      console.log("[UI] pickRepo", { fullName, issueKey });
-      setSelected(fullName);
-      setPr(null);
-
-      const ISSUE_RE = /^[A-Z][A-Z0-9_]+-\d+$/;
-      if (!ISSUE_RE.test(String(issueKey).trim())) {
-        setMsg("Invalid Issue Key. Example: SAMPLEPROJ-9");
-        return;
-      }
-
-      if (!fullName || !fullName.includes("/")) {
-        setMsg("Bad repo identifier");
-        return;
-      }
-
-      const [owner, repo] = fullName.split("/");
-      setMsg("Loading PR…");
-      const cleanedKey = String(issueKey).trim();
-      const { pr } = await invoke("getRepoAndPR", {
-        owner,
-        repo,
-        issueKey: cleanedKey,
-      });
-      console.log("[UI] getRepoAndPR result", pr);
-      setPr(pr || null);
-      console.log("PR SAVED, pr: ", pr);
-      setMsg(pr ? "" : "Have no opened pull requests.");
-    } catch (e) {
-      console.error("[UI] pickRepo error", e);
-      setMsg(`Error: ${e?.message || e}`);
-    }
-  };
-
-  const approve = async () => {
-    if (!pr) return;
-    const [owner, repo] = selected.split("/");
-    console.log("[UI] approvePR", { owner, repo, number: pr.number });
-    setMsg("Approving…");
-    try {
-      await invoke("approvePR", { owner, repo, number: pr.number });
-      setMsg("Approved.");
-    } catch (e) {
-      setMsg(String(e.message || e));
-    }
-  };
-
-  const merge = async () => {
-    if (!pr) return;
-    const [owner, repo] = selected.split("/");
-    console.log("[UI] mergePR", { owner, repo, number: pr.number });
-    setMsg("Merging…");
-    try {
-      await invoke("mergePR", { owner, repo, number: pr.number });
-      setMsg("Merged. Jira will transition via webhook if the PR was merged.");
-    } catch (e) {
-      setMsg(String(e.message || e));
-    }
-  };
-
-  const createTestIssue = async () => {
-    console.log("[UI] createTestIssue", { projectKey });
-    if (!projectKey.trim()) {
-      setMsg("Enter a Project key, e.g., KAN");
-      return;
-    }
-    setMsg("Creating test issue…");
-    try {
-      const { key } = await invoke("createTestIssue", {
-        projectKey,
-        summary: "Forge demo issue",
-      });
-      console.log("[UI] created issue", key);
-      setIssueKey(key);
-      setMsg(
-        `Created ${key}. You can now load repos and find a PR with "${key}" in title/branch.`
-      );
-    } catch (e) {
-      console.error("[UI] createTestIssue error", e);
-      setMsg(`Create error: ${e?.message || e}`);
-    }
-  };
-
-  const loadRecentIssues = async () => {
-    console.log("[UI] listRecentIssues", { projectKey });
-    if (!projectKey.trim()) {
-      setMsg("Enter a Project key, e.g., SAMPLEPROJ");
-      return;
-    }
-    setMsg("Loading recent issues…");
-    try {
-      const list = await invoke("listRecentIssues", { projectKey });
-      console.log("[UI] listRecentIssues result", list);
-      const safe = Array.isArray(list) ? list.filter((x) => x && x.key) : [];
-      setIssues(safe);
-      setMsg(safe.length ? "" : "No recent issues found for this project.");
-    } catch (e) {
-      console.error("[UI] listRecentIssues error", e);
-      setMsg(`Search error: ${e?.message || e}`);
-      setIssues([]);
-    }
-  };
-
-  const chooseIssue = (key) => {
-    console.log("[UI] chooseIssue", key);
-    setIssueKey(key);
-    setMsg(
-      `Selected ${key}. Now pick a repo and we’ll look for a matching PR.`
-    );
   };
 
   const reset = async () => {
@@ -190,171 +90,402 @@ const App = () => {
       setSaved(false);
       setToken("");
       setSecret("");
-      setIssueKey("");
-      setRepos([]);
-      setSelected(null);
-      setPr(null);
-      setIssues([]);
       setProjectKey("");
+      setIssues([]);
+      setIssueKey("");
+      setIssueInfo(null);
+      setRepos([]);
+      setSelectedRepo(null);
+      setRepoInfo(null);
+      setPrs([]);
+      setMe(null);
+      setMatchIndex(-1);
+      setActiveView("issue");
       setMsg("Credentials cleared.");
     } catch (e) {
       setMsg(`Reset error: ${e?.message || e}`);
     }
   };
 
+  const listRecentIssues = async () => {
+    const pk = String(projectKey || "").trim();
+    if (!pk) return setMsg("Enter a Project key, e.g., SAMPLEPROJ");
+    setMsg("Loading recent issues…");
+    try {
+      const list = await invoke("listRecentIssues", { projectKey: pk });
+      const safe = Array.isArray(list) ? list.filter((x) => x && x.key) : [];
+      setIssues(safe);
+      setMsg(safe.length ? "" : "No recent issues found for this project.");
+    } catch (e) {
+      setMsg(`Search error: ${e?.message || e}`);
+      setIssues([]);
+    }
+  };
+
+  const createTestIssue = async () => {
+    const pk = String(projectKey || "").trim();
+    if (!pk) return setMsg("Enter a Project key, e.g., SAMPLEPROJ");
+    setMsg("Creating test issue…");
+    try {
+      const { key } = await invoke("createTestIssue", {
+        projectKey: pk,
+        summary: "Forge demo issue",
+      });
+      setIssueKey(key);
+      setActiveView("connected");
+      setMsg(
+        `Created ${key}. Now load repos and pick one with "${key}" in a PR title/branch.`
+      );
+    } catch (e) {
+      setMsg(`Create error: ${e?.message || e}`);
+    }
+  };
+
+  const chooseIssue = (key) => {
+    setIssueKey(key);
+    setActiveView("connected");
+    setMsg(`Selected ${key}. Now load repos and pick a repository.`);
+  };
+
+  const loadRepos = async () => {
+    setMsg("Loading repos…");
+    try {
+      const r = await invoke("listRepos");
+      setRepos(Array.isArray(r) ? r : []);
+      setMsg(r?.length ? "" : "No repos visible to this token.");
+    } catch (e) {
+      setMsg(`Error: ${e?.message || e}`);
+      setRepos([]);
+    }
+  };
+
+  const pickRepo = async (fullName) => {
+    setSelectedRepo(fullName);
+    setRepoInfo(null);
+    setPrs([]);
+    setMatchIndex(-1);
+    setLoadingRepo(true); // ← start inline loading
+
+    const k = String(issueKey || "").trim();
+    const effectiveKey = ISSUE_RE.test(k) ? k : undefined;
+
+    if (!fullName || !fullName.includes("/")) {
+      setMsg("Bad repo identifier");
+      setLoadingRepo(false);
+      return;
+    }
+    const [owner, repo] = fullName.split("/");
+
+    try {
+      const bundle = await invoke("getRepoBundle", {
+        owner,
+        repo,
+        issueKey: effectiveKey,
+      });
+      setMe(bundle?.me || null);
+      setRepoInfo(bundle?.repo || null);
+      setPrs(Array.isArray(bundle?.prs) ? bundle.prs : []);
+      setMatchIndex(
+        typeof bundle?.matchIndex === "number" ? bundle.matchIndex : -1
+      );
+      setMsg(bundle?.prs?.length ? "" : "Have no opened pull requests.");
+    } catch (e) {
+      setMsg(`Load error: ${e?.message || e}`);
+    } finally {
+      setLoadingRepo(false); // ← stop inline loading
+    }
+  };
+
+  const approveNumber = async (number) => {
+    if (!selectedRepo) return;
+    const [owner, repo] = selectedRepo.split("/");
+    setMsg("Approving…");
+    try {
+      await invoke("approvePR", { owner, repo, number });
+      setMsg("Approved.");
+    } catch (e) {
+      setMsg(String(e?.message || e));
+    }
+  };
+
+  const mergeNumber = async (number) => {
+    if (!selectedRepo) return;
+    const [owner, repo] = selectedRepo.split("/");
+    setMsg("Merging…");
+    try {
+      await invoke("mergePR", { owner, repo, number });
+      setMsg("Merged. Jira will transition via webhook if the PR was merged.");
+    } catch (e) {
+      setMsg(String(e?.message || e));
+    }
+  };
+
+  // --- UI blocks ---
+
+  const AuthBlock = !saved && (
+    <SectionMessage title="Auth" appearance="information">
+      <Stack space="small">
+        <Text>
+          Save your GitHub Personal Access Token and GitHub Webhook Secret.
+        </Text>
+        <Textfield
+          name="gh-pat"
+          placeholder="GitHub PAT"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+        />
+        <Textfield
+          name="gh-secret"
+          placeholder="GitHub Webhook Secret"
+          value={secret}
+          onChange={(e) => setSecret(e.target.value)}
+        />
+        <Inline space="small">
+          <Button appearance="primary" onClick={saveCreds}>
+            Save
+          </Button>
+        </Inline>
+      </Stack>
+    </SectionMessage>
+  );
+
+  const NavBar = saved && (
+    <Inline space="small">
+      <Button
+        appearance={activeView === "issue" ? "primary" : "default"}
+        onClick={() => setActiveView("issue")}
+      >
+        Issue
+      </Button>
+      <Button
+        appearance={activeView === "connected" ? "primary" : "default"}
+        onClick={() => setActiveView("connected")}
+      >
+        Connected
+      </Button>
+    </Inline>
+  );
+
+  const IssueScreen = saved && activeView === "issue" && (
+    <SectionMessage
+      title="Pick or create a Jira issue"
+      appearance="information"
+    >
+      <Stack space="small">
+        <Text>
+          Enter your Project key (e.g., SAMPLEPROJ), then create a test issue or
+          list recent ones and click to select.
+        </Text>
+        <Textfield
+          name="project-key"
+          placeholder="Project key (e.g., SAMPLEPROJ)"
+          value={projectKey}
+          onChange={(e) => setProjectKey(e.target.value)}
+        />
+        <Inline space="small">
+          <Button onClick={listRecentIssues}>List recent issues</Button>
+          <Button appearance="primary" onClick={createTestIssue}>
+            Create test issue
+          </Button>
+        </Inline>
+
+        {issues?.length > 0 && (
+          <Stack space="none">
+            {issues.map((it) => (
+              <Text key={it.key} onClick={() => chooseIssue(it.key)}>
+                {it.key} — {it.summary || "(no summary)"}
+              </Text>
+            ))}
+          </Stack>
+        )}
+
+        {issueKey && (
+          <SectionMessage title="Selected issue" appearance="confirmation">
+            <Stack space="none">
+              <Text>{issueKey}</Text>
+              {issueInfo && (
+                <Text>
+                  {issueInfo.summary || ""} [{issueInfo.status || "Status"}]
+                  {issueInfo.assignee
+                    ? ` · Assignee: ${issueInfo.assignee}`
+                    : ""}
+                </Text>
+              )}
+            </Stack>
+          </SectionMessage>
+        )}
+      </Stack>
+    </SectionMessage>
+  );
+
+  const ConnectedScreen = saved && activeView === "connected" && (
+    <SectionMessage title="Connected" appearance="confirmation">
+      <Stack space="small">
+        <Textfield
+          name="issue"
+          placeholder="Issue Key to match (optional, e.g., SAMPLEPROJ-9)"
+          value={issueKey}
+          onChange={(e) => setIssueKey(e.target.value)}
+        />
+        <Inline space="small">
+          <Button onClick={loadRepos}>Load my repos</Button>
+        </Inline>
+
+        {Array.isArray(repos) && repos.length > 0 && (
+          <Stack space="small">
+            {repos.map((r) => (
+              <Stack key={r.id} space="none">
+                <Inline space="small">
+                  <Text>
+                    {r.full_name} — {r.language || "n/a"} (
+                    {r.visibility || "public"}) · default:{" "}
+                    {r.default_branch || "n/a"}
+                  </Text>
+                  <Button onClick={() => pickRepo(r.full_name)}>
+                    {selectedRepo === r.full_name ? "Refresh" : "Select"}
+                  </Button>
+                </Inline>
+
+                {selectedRepo === r.full_name && (
+                  <Stack space="small">
+                    {loadingRepo && <Text>Loading repository & PRs…</Text>}
+
+                    {repoInfo && (
+                      <SectionMessage
+                        title="Repository"
+                        appearance="information"
+                      >
+                        <Stack space="none">
+                          <Text>
+                            <Link href={repoInfo.html_url} openNewTab>
+                              {repoInfo.full_name}
+                            </Link>
+                          </Text>
+                          <Text>
+                            Language: {repoInfo.language || "n/a"} · Default
+                            branch: {repoInfo.default_branch || "n/a"} ·
+                            Visibility: {repoInfo.visibility || "public"}
+                          </Text>
+                          <Text>
+                            Stars: {repoInfo.stargazers_count} · Forks:{" "}
+                            {repoInfo.forks_count} · Open issues:{" "}
+                            {repoInfo.open_issues_count}
+                          </Text>
+                          <Text>Updated: {repoInfo.updated_at || "n/a"}</Text>
+                        </Stack>
+                      </SectionMessage>
+                    )}
+
+                    {Array.isArray(prs) && prs.length === 0 && !loadingRepo && (
+                      <Text>Have no opened pull requests.</Text>
+                    )}
+
+                    {Array.isArray(prs) && prs.length > 0 && (
+                      <Stack space="small">
+                        {prs.map((p, idx) => {
+                          const isMatch = idx === matchIndex;
+                          const isOwn =
+                            me &&
+                            p?.author &&
+                            me.toLowerCase() === p.author.toLowerCase();
+                          return (
+                            <SectionMessage
+                              key={p.number}
+                              title={
+                                isMatch
+                                  ? `PR #${p.number} (matches ${
+                                      issueKey || "no key"
+                                    })`
+                                  : `PR #${p.number}`
+                              }
+                              appearance={
+                                isMatch ? "confirmation" : "information"
+                              }
+                            >
+                              <Stack space="small">
+                                <Text>
+                                  <Link href={p.html_url} openNewTab>
+                                    {p.title || p.html_url}
+                                  </Link>
+                                </Text>
+                                <Text>
+                                  Branch: {p.head_ref || "(unknown)"} · Author:{" "}
+                                  {p.author || "(unknown)"}
+                                </Text>
+                                <Inline space="small">
+                                  {isOwn ? (
+                                    <Button
+                                      isDisabled
+                                      tooltip="You can't approve your own PR"
+                                    >
+                                      Approve
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      onClick={() => approveNumber(p.number)}
+                                    >
+                                      Approve
+                                    </Button>
+                                  )}
+                                  <Button
+                                    appearance="primary"
+                                    onClick={() => mergeNumber(p.number)}
+                                  >
+                                    Merge
+                                  </Button>
+                                </Inline>
+                              </Stack>
+                            </SectionMessage>
+                          );
+                        })}
+                      </Stack>
+                    )}
+                  </Stack>
+                )}
+              </Stack>
+            ))}
+          </Stack>
+        )}
+      </Stack>
+    </SectionMessage>
+  );
+
   return (
     <Stack space="large">
       <Text size="xlarge">GitHub ↔ Jira (Forge Admin Page)</Text>
+      {!!msg && <Text>{msg}</Text>}
 
-      {!saved && (
-        <SectionMessage title="Auth" appearance="information">
-          <Stack space="small">
-            <Text>
-              Save your GitHub Personal Access Token and Webhook Secret.
-            </Text>
-            <Textfield
-              name="gh-pat"
-              placeholder="GitHub PAT"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-            />
-            <Textfield
-              name="gh-secret"
-              placeholder="GitHub Webhook Secret"
-              value={secret}
-              onChange={(e) => setSecret(e.target.value)}
-            />
-            <Inline space="small">
-              <Button appearance="primary" onClick={save}>
-                Save
-              </Button>
-            </Inline>
-          </Stack>
-        </SectionMessage>
-      )}
+      {AuthBlock}
+
+      {NavBar}
+
+      {IssueScreen}
+
+      {ConnectedScreen}
 
       {saved && (
-        <SectionMessage
-          title="Pick or create a Jira issue"
-          appearance="information"
-        >
-          <Stack space="small">
-            <Text>
-              Enter your Project key (e.g., KAN), then either create a test
-              issue or list recent ones and click to select.
-            </Text>
-            <Textfield
-              name="project-key"
-              placeholder="Project key (e.g., KAN)"
-              value={projectKey}
-              onChange={(e) => setProjectKey(e.target.value)}
-            />
-            <Inline space="small">
-              <Button onClick={loadRecentIssues}>List recent issues</Button>
-              <Button appearance="primary" onClick={createTestIssue}>
-                Create test issue
-              </Button>
-            </Inline>
-
-            {issues?.length > 0 && (
-              <Stack space="none">
-                {issues.map((it) => (
-                  <Text key={it.key} onClick={() => chooseIssue(it.key)}>
-                    {it.key} — {it.summary || "(no summary)"}
-                  </Text>
-                ))}
-              </Stack>
-            )}
-            <Inline space="small">
-              <Button
-                appearance="subtle"
-                onClick={() => {
-                  console.log("[UI] back to Auth");
-                  setSaved(false);
-                  setRepos([]);
-                  setSelected(null);
-                  setPr(null);
-                  setMsg("");
-                }}
-              >
-                Back
-              </Button>
-              <Button appearance="warning" onClick={reset}>
-                Reset credentials (clear storage)
-              </Button>
-            </Inline>
-          </Stack>
-        </SectionMessage>
-      )}
-      {saved && (
-        <SectionMessage title="Connected" appearance="confirmation">
-          <Stack space="small">
-            <Textfield
-              name="issue"
-              placeholder="Issue Key (e.g., KAN-1)"
-              value={issueKey}
-              onChange={(e) => setIssueKey(e.target.value)}
-            />
-            <Inline space="small">
-              <Button onClick={loadRepos}>Load my repos</Button>
-            </Inline>
-            {Array.isArray(repos) && repos.length > 0 && (
-              <Stack space="none">
-                {repos.map((r) => (
-                  <Text key={r.id}>
-                    {r.full_name}{" "}
-                    <Button onClick={() => pickRepo(r.full_name)}>
-                      Select
-                    </Button>
-                  </Text>
-                ))}
-              </Stack>
-            )}
-            {selected && pr === null && (
-              <Text>Have no opened pull requests.</Text>
-            )}
-            {selected && pr && (
-              <SectionMessage
-                title="Matched Pull Request"
-                appearance="information"
-              >
-                <Stack space="small">
-                  <Text>
-                    <Link href={pr.html_url} openNewTab>
-                      {pr.title || pr.html_url}
-                    </Link>
-                  </Text>
-                  <Inline space="small">
-                    <Button onClick={approve}>Approve</Button>
-                    <Button appearance="primary" onClick={merge}>
-                      Merge
-                    </Button>
-                  </Inline>
-                </Stack>
-              </SectionMessage>
-            )}
-            {!!msg && <Text>{msg}</Text>}(
-            <Inline space="small">
-              <Button
-                appearance="subtle"
-                onClick={() => {
-                  console.log("[UI] back to Auth");
-                  setSaved(false);
-                  setRepos([]);
-                  setSelected(null);
-                  setPr(null);
-                  setMsg("");
-                }}
-              >
-                Back
-              </Button>
-            </Inline>
-            )
-          </Stack>
-        </SectionMessage>
+        <Inline space="small">
+          <Button
+            appearance="subtle"
+            onClick={() => {
+              setActiveView("issue");
+              setRepos([]);
+              setSelectedRepo(null);
+              setRepoInfo(null);
+              setPrs([]);
+              setMatchIndex(-1);
+              setMsg("");
+            }}
+          >
+            Back to Issue
+          </Button>
+          <Button appearance="warning" onClick={reset}>
+            Reset credentials (clear storage)
+          </Button>
+        </Inline>
       )}
     </Stack>
   );
-};
+}
 
 ForgeReconciler.render(<App />);

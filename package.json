@@ -8,13 +8,15 @@
     "lint": "eslint src/**/*"
   },
   "devDependencies": {
+    "@types/node": "^24.6.0",
     "eslint": "^8.56.0",
     "eslint-plugin-react-hooks": "^4.6.0"
   },
   "dependencies": {
+    "@forge/api": "^6.1.3",
     "@forge/bridge": "5.5.0",
     "@forge/react": "11.4.0",
-    "@forge/resolver": "1.7.0",
+    "@forge/resolver": "^1.7.0",
     "react": "^18.2.0"
   }
 }

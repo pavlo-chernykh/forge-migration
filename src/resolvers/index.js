@@ -170,7 +170,7 @@ resolver.define("listRecentIssues", async ({ payload }) => {
   const { projectKey } = payload || {};
   const jql = `project = ${projectKey} ORDER BY created DESC`;
 
-  const body = { jql, maxResults: 10, fields: ["summary"] };
+  const body = { jql, maxResults: 10, fields: ["summary", "status"] };
 
   let res = await asUser().requestJira(route`/rest/api/3/search/jql`, {
     method: "POST",
@@ -214,6 +214,7 @@ resolver.define("listRecentIssues", async ({ payload }) => {
     .map((i) => ({
       key: i?.key,
       summary: i?.fields?.summary ?? "",
+      status: i?.fields?.status?.name ?? "",
     }))
     .filter((x) => Boolean(x.key));
 });

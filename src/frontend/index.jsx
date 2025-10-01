@@ -1,3 +1,4 @@
+// src/frontend/index.jsx
 import React, { useEffect, useState } from "react";
 import ForgeReconciler, {
   Text,
@@ -11,6 +12,14 @@ import ForgeReconciler, {
 import { invoke } from "@forge/bridge";
 
 const ISSUE_RE = /^[A-Z][A-Z0-9_]+-\d+$/;
+
+const statusChip = (s) => {
+  const t = String(s || "").toLowerCase();
+  if (/done|closed|resolved/.test(t)) return "✅ Done";
+  if (/progress|in\s*progress/.test(t)) return "🟡 In Progress";
+  if (/todo|to\s*do|backlog/.test(t)) return "⭕️ To Do";
+  return s || "—";
+};
 
 function App() {
   // Auth
@@ -34,12 +43,10 @@ function App() {
   const [prs, setPrs] = useState([]);
   const [me, setMe] = useState(null);
   const [matchIndex, setMatchIndex] = useState(-1);
+  const [loadingRepo, setLoadingRepo] = useState(false);
 
   // Status line
   const [msg, setMsg] = useState("");
-
-  // State
-  const [loadingRepo, setLoadingRepo] = useState(false);
 
   // On mount → read auth state
   useEffect(() => {
@@ -47,13 +54,11 @@ function App() {
       try {
         const s = await invoke("getAuthState");
         setSaved(Boolean(s?.hasToken && s?.hasSecret));
-      } catch (e) {
-        // non-fatal
-      }
+      } catch {}
     })();
   }, []);
 
-  // Whenever issueKey changes, fetch a tiny issue summary/status (spec requires "get issue info")
+  // Fetch minimal issue info when issueKey changes (summary/status/assignee)
   useEffect(() => {
     (async () => {
       const k = String(issueKey || "").trim();
@@ -62,9 +67,7 @@ function App() {
       try {
         const info = await invoke("getIssueInfo", { issueKey: k });
         setIssueInfo(info || null);
-      } catch {
-        // ignore display errors here; user might be typing
-      }
+      } catch {}
     })();
   }, [issueKey]);
 
@@ -150,9 +153,17 @@ function App() {
   const loadRepos = async () => {
     setMsg("Loading repos…");
     try {
-      const r = await invoke("listRepos");
+      const k = String(issueKey || "").trim();
+      const payload = ISSUE_RE.test(k) ? { issueKey: k } : {};
+      const r = await invoke("listRepos", payload);
       setRepos(Array.isArray(r) ? r : []);
-      setMsg(r?.length ? "" : "No repos visible to this token.");
+      setMsg(
+        r?.length
+          ? ""
+          : ISSUE_RE.test(k)
+          ? "No repositories have an open PR matching that Issue Key."
+          : "No repos visible to this token."
+      );
     } catch (e) {
       setMsg(`Error: ${e?.message || e}`);
       setRepos([]);
@@ -164,10 +175,7 @@ function App() {
     setRepoInfo(null);
     setPrs([]);
     setMatchIndex(-1);
-    setLoadingRepo(true); // ← start inline loading
-
-    const k = String(issueKey || "").trim();
-    const effectiveKey = ISSUE_RE.test(k) ? k : undefined;
+    setLoadingRepo(true);
 
     if (!fullName || !fullName.includes("/")) {
       setMsg("Bad repo identifier");
@@ -175,6 +183,9 @@ function App() {
       return;
     }
     const [owner, repo] = fullName.split("/");
+
+    const k = String(issueKey || "").trim();
+    const effectiveKey = ISSUE_RE.test(k) ? k : undefined;
 
     try {
       const bundle = await invoke("getRepoBundle", {
@@ -188,11 +199,20 @@ function App() {
       setMatchIndex(
         typeof bundle?.matchIndex === "number" ? bundle.matchIndex : -1
       );
-      setMsg(bundle?.prs?.length ? "" : "Have no opened pull requests.");
+
+      if (!effectiveKey) {
+        setMsg(
+          bundle?.prs?.length
+            ? "Tip: enter an Issue Key to highlight a matching PR."
+            : "Have no opened pull requests."
+        );
+      } else {
+        setMsg(bundle?.prs?.length ? "" : "Have no opened pull requests.");
+      }
     } catch (e) {
       setMsg(`Load error: ${e?.message || e}`);
     } finally {
-      setLoadingRepo(false); // ← stop inline loading
+      setLoadingRepo(false);
     }
   };
 
@@ -218,14 +238,6 @@ function App() {
     } catch (e) {
       setMsg(String(e?.message || e));
     }
-  };
-
-  const statusChip = (s) => {
-    const t = String(s || "").toLowerCase();
-    if (/done|closed|resolved/.test(t)) return "✅ Done";
-    if (/progress|in\s*progress/.test(t)) return "🟡 In Progress";
-    if (/todo|to\s*do|backlog/.test(t)) return "⭕️ To Do";
-    return s || "—";
   };
 
   // --- UI blocks ---
@@ -351,13 +363,11 @@ function App() {
                   appearance={isSelected ? "confirmation" : "information"}
                 >
                   <Stack space="small">
-                    {/* meta row */}
                     <Text>
                       {r.language || "n/a"} ({r.visibility || "public"}) ·
                       default: {r.default_branch || "n/a"}
                     </Text>
 
-                    {/* hint + action */}
                     <Inline space="small">
                       {r.firstMatch?.number && (
                         <Text>
@@ -374,13 +384,12 @@ function App() {
                       </Button>
                     </Inline>
 
-                    {/* selected repo expands inline here */}
                     {isSelected && (
                       <Stack space="medium">
-                        {/* a bit of breathing room */}
                         <Text> </Text>
 
-                        {/* repo details (plain, to avoid nested cards clutter) */}
+                        {loadingRepo && <Text>Loading repository & PRs…</Text>}
+
                         {repoInfo && (
                           <Stack space="xsmall">
                             <Text>
@@ -402,10 +411,11 @@ function App() {
                           </Stack>
                         )}
 
-                        {/* PRs */}
-                        {Array.isArray(prs) && prs.length === 0 && (
-                          <Text>Have no opened pull requests.</Text>
-                        )}
+                        {Array.isArray(prs) &&
+                          prs.length === 0 &&
+                          !loadingRepo && (
+                            <Text>Have no opened pull requests.</Text>
+                          )}
 
                         {Array.isArray(prs) && prs.length > 0 && (
                           <Stack space="medium">

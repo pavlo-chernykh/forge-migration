@@ -150,9 +150,17 @@ function App() {
   const loadRepos = async () => {
     setMsg("Loading repos…");
     try {
-      const r = await invoke("listRepos");
+      const k = String(issueKey || "").trim();
+      const payload = ISSUE_RE.test(k) ? { issueKey: k } : {};
+      const r = await invoke("listRepos", payload);
       setRepos(Array.isArray(r) ? r : []);
-      setMsg(r?.length ? "" : "No repos visible to this token.");
+      setMsg(
+        r?.length
+          ? ""
+          : ISSUE_RE.test(k)
+          ? "No repositories have an open PR matching that Issue Key."
+          : "No repos visible to this token."
+      );
     } catch (e) {
       setMsg(`Error: ${e?.message || e}`);
       setRepos([]);
@@ -341,6 +349,9 @@ function App() {
                     {r.visibility || "public"}) · default:{" "}
                     {r.default_branch || "n/a"}
                   </Text>
+                  {typeof r.firstMatch?.number === "number" && (
+                    <Text> · matched PR #{r.firstMatch.number}</Text>
+                  )}
                   <Button onClick={() => pickRepo(r.full_name)}>
                     {selectedRepo === r.full_name ? "Refresh" : "Select"}
                   </Button>

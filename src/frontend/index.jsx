@@ -10,6 +10,7 @@ import ForgeReconciler, {
   Head,
   Row,
   Cell,
+  Link,
 } from "@forge/react";
 import { invoke } from "@forge/bridge";
 
@@ -98,6 +99,7 @@ const App = () => {
       });
       console.log("[UI] getRepoAndPR result", pr);
       setPr(pr || null);
+      console.log("PR SAVED, pr: ", pr);
       setMsg(pr ? "" : "Have no opened pull requests.");
     } catch (e) {
       console.error("[UI] pickRepo error", e);
@@ -318,9 +320,9 @@ const App = () => {
               >
                 <Stack space="small">
                   <Text>
-                    <a href={pr.html_url} target="_blank" rel="noreferrer">
-                      {pr.title}
-                    </a>
+                    <Link href={pr.html_url} openNewTab>
+                      {pr.title || pr.html_url}
+                    </Link>
                   </Text>
                   <Inline space="small">
                     <Button onClick={approve}>Approve</Button>

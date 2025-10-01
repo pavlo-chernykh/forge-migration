@@ -1,3 +1,4 @@
+// src/frontend/index.jsx
 import React, { useEffect, useState } from "react";
 import ForgeReconciler, {
   Text,
@@ -11,6 +12,14 @@ import ForgeReconciler, {
 import { invoke } from "@forge/bridge";
 
 const ISSUE_RE = /^[A-Z][A-Z0-9_]+-\d+$/;
+
+const statusChip = (s) => {
+  const t = String(s || "").toLowerCase();
+  if (/done|closed|resolved/.test(t)) return "✅ Done";
+  if (/progress|in\s*progress/.test(t)) return "🟡 In Progress";
+  if (/todo|to\s*do|backlog/.test(t)) return "⭕️ To Do";
+  return s || "—";
+};
 
 function App() {
   // Auth
@@ -34,12 +43,10 @@ function App() {
   const [prs, setPrs] = useState([]);
   const [me, setMe] = useState(null);
   const [matchIndex, setMatchIndex] = useState(-1);
+  const [loadingRepo, setLoadingRepo] = useState(false);
 
   // Status line
   const [msg, setMsg] = useState("");
-
-  // State
-  const [loadingRepo, setLoadingRepo] = useState(false);
 
   // On mount → read auth state
   useEffect(() => {
@@ -47,13 +54,11 @@ function App() {
       try {
         const s = await invoke("getAuthState");
         setSaved(Boolean(s?.hasToken && s?.hasSecret));
-      } catch (e) {
-        // non-fatal
-      }
+      } catch {}
     })();
   }, []);
 
-  // Whenever issueKey changes, fetch a tiny issue summary/status (spec requires "get issue info")
+  // Fetch minimal issue info when issueKey changes (summary/status/assignee)
   useEffect(() => {
     (async () => {
       const k = String(issueKey || "").trim();
@@ -62,9 +67,7 @@ function App() {
       try {
         const info = await invoke("getIssueInfo", { issueKey: k });
         setIssueInfo(info || null);
-      } catch {
-        // ignore display errors here; user might be typing
-      }
+      } catch {}
     })();
   }, [issueKey]);
 
@@ -172,10 +175,7 @@ function App() {
     setRepoInfo(null);
     setPrs([]);
     setMatchIndex(-1);
-    setLoadingRepo(true); // ← start inline loading
-
-    const k = String(issueKey || "").trim();
-    const effectiveKey = ISSUE_RE.test(k) ? k : undefined;
+    setLoadingRepo(true);
 
     if (!fullName || !fullName.includes("/")) {
       setMsg("Bad repo identifier");
@@ -183,6 +183,9 @@ function App() {
       return;
     }
     const [owner, repo] = fullName.split("/");
+
+    const k = String(issueKey || "").trim();
+    const effectiveKey = ISSUE_RE.test(k) ? k : undefined;
 
     try {
       const bundle = await invoke("getRepoBundle", {
@@ -196,11 +199,20 @@ function App() {
       setMatchIndex(
         typeof bundle?.matchIndex === "number" ? bundle.matchIndex : -1
       );
-      setMsg(bundle?.prs?.length ? "" : "Have no opened pull requests.");
+
+      if (!effectiveKey) {
+        setMsg(
+          bundle?.prs?.length
+            ? "Tip: enter an Issue Key to highlight a matching PR."
+            : "Have no opened pull requests."
+        );
+      } else {
+        setMsg(bundle?.prs?.length ? "" : "Have no opened pull requests.");
+      }
     } catch (e) {
       setMsg(`Load error: ${e?.message || e}`);
     } finally {
-      setLoadingRepo(false); // ← stop inline loading
+      setLoadingRepo(false);
     }
   };
 
@@ -226,14 +238,6 @@ function App() {
     } catch (e) {
       setMsg(String(e?.message || e));
     }
-  };
-
-  const statusChip = (s) => {
-    const t = String(s || "").toLowerCase();
-    if (/done|closed|resolved/.test(t)) return "✅ Done";
-    if (/progress|in\s*progress/.test(t)) return "🟡 In Progress";
-    if (/todo|to\s*do|backlog/.test(t)) return "⭕️ To Do";
-    return s || "—";
   };
 
   // --- UI blocks ---
@@ -349,121 +353,138 @@ function App() {
         </Inline>
 
         {Array.isArray(repos) && repos.length > 0 && (
-          <Stack space="small">
-            {repos.map((r) => (
-              <Stack key={r.id} space="none">
-                <Inline space="small">
-                  <Text>
-                    {r.full_name} — {r.language || "n/a"} (
-                    {r.visibility || "public"}) · default:{" "}
-                    {r.default_branch || "n/a"}
-                  </Text>
-                  {typeof r.firstMatch?.number === "number" && (
-                    <Text> · matched PR #{r.firstMatch.number}</Text>
-                  )}
-                  <Button onClick={() => pickRepo(r.full_name)}>
-                    {selectedRepo === r.full_name ? "Refresh" : "Select"}
-                  </Button>
-                </Inline>
-
-                {selectedRepo === r.full_name && (
+          <Stack space="large">
+            {repos.map((r) => {
+              const isSelected = selectedRepo === r.full_name;
+              return (
+                <SectionMessage
+                  key={r.id}
+                  title={r.full_name}
+                  appearance={isSelected ? "confirmation" : "information"}
+                >
                   <Stack space="small">
-                    {loadingRepo && <Text>Loading repository & PRs…</Text>}
+                    <Text>
+                      {r.language || "n/a"} ({r.visibility || "public"}) ·
+                      default: {r.default_branch || "n/a"}
+                    </Text>
 
-                    {repoInfo && (
-                      <SectionMessage
-                        title="Repository"
-                        appearance="information"
-                      >
-                        <Stack space="none">
-                          <Text>
-                            <Link href={repoInfo.html_url} openNewTab>
-                              {repoInfo.full_name}
+                    <Inline space="small">
+                      {r.firstMatch?.number && (
+                        <Text>
+                          Matched PR #{r.firstMatch.number}{" "}
+                          {r.firstMatch.html_url && (
+                            <Link href={r.firstMatch.html_url} openNewTab>
+                              (open)
                             </Link>
-                          </Text>
-                          <Text>
-                            Language: {repoInfo.language || "n/a"} · Default
-                            branch: {repoInfo.default_branch || "n/a"} ·
-                            Visibility: {repoInfo.visibility || "public"}
-                          </Text>
-                          <Text>
-                            Stars: {repoInfo.stargazers_count} · Forks:{" "}
-                            {repoInfo.forks_count} · Open issues:{" "}
-                            {repoInfo.open_issues_count}
-                          </Text>
-                          <Text>Updated: {repoInfo.updated_at || "n/a"}</Text>
-                        </Stack>
-                      </SectionMessage>
-                    )}
+                          )}
+                        </Text>
+                      )}
+                      <Button onClick={() => pickRepo(r.full_name)}>
+                        {isSelected ? "Refresh" : "Select"}
+                      </Button>
+                    </Inline>
 
-                    {Array.isArray(prs) && prs.length === 0 && !loadingRepo && (
-                      <Text>Have no opened pull requests.</Text>
-                    )}
+                    {isSelected && (
+                      <Stack space="medium">
+                        <Text> </Text>
 
-                    {Array.isArray(prs) && prs.length > 0 && (
-                      <Stack space="small">
-                        {prs.map((p, idx) => {
-                          const isMatch = idx === matchIndex;
-                          const isOwn =
-                            me &&
-                            p?.author &&
-                            me.toLowerCase() === p.author.toLowerCase();
-                          return (
-                            <SectionMessage
-                              key={p.number}
-                              title={
-                                isMatch
-                                  ? `PR #${p.number} (matches ${
-                                      issueKey || "no key"
-                                    })`
-                                  : `PR #${p.number}`
-                              }
-                              appearance={
-                                isMatch ? "confirmation" : "information"
-                              }
-                            >
-                              <Stack space="small">
-                                <Text>
-                                  <Link href={p.html_url} openNewTab>
-                                    {p.title || p.html_url}
-                                  </Link>
-                                </Text>
-                                <Text>
-                                  Branch: {p.head_ref || "(unknown)"} · Author:{" "}
-                                  {p.author || "(unknown)"}
-                                </Text>
-                                <Inline space="small">
-                                  {isOwn ? (
-                                    <Button
-                                      isDisabled
-                                      tooltip="You can't approve your own PR"
-                                    >
-                                      Approve
-                                    </Button>
-                                  ) : (
-                                    <Button
-                                      onClick={() => approveNumber(p.number)}
-                                    >
-                                      Approve
-                                    </Button>
-                                  )}
-                                  <Button
-                                    appearance="primary"
-                                    onClick={() => mergeNumber(p.number)}
-                                  >
-                                    Merge
-                                  </Button>
-                                </Inline>
-                              </Stack>
-                            </SectionMessage>
-                          );
-                        })}
+                        {loadingRepo && <Text>Loading repository & PRs…</Text>}
+
+                        {repoInfo && (
+                          <Stack space="xsmall">
+                            <Text>
+                              <Link href={repoInfo.html_url} openNewTab>
+                                {repoInfo.full_name}
+                              </Link>
+                            </Text>
+                            <Text>
+                              Language: {repoInfo.language || "n/a"} · Default
+                              branch: {repoInfo.default_branch || "n/a"} ·
+                              Visibility: {repoInfo.visibility || "public"}
+                            </Text>
+                            <Text>
+                              Stars: {repoInfo.stargazers_count} · Forks:{" "}
+                              {repoInfo.forks_count} · Open issues:{" "}
+                              {repoInfo.open_issues_count}
+                            </Text>
+                            <Text>Updated: {repoInfo.updated_at || "n/a"}</Text>
+                          </Stack>
+                        )}
+
+                        {Array.isArray(prs) &&
+                          prs.length === 0 &&
+                          !loadingRepo && (
+                            <Text>Have no opened pull requests.</Text>
+                          )}
+
+                        {Array.isArray(prs) && prs.length > 0 && (
+                          <Stack space="medium">
+                            {prs.map((p, idx) => {
+                              const isMatch = idx === matchIndex;
+                              const isOwn =
+                                me &&
+                                p?.author &&
+                                me.toLowerCase() === p.author.toLowerCase();
+                              return (
+                                <SectionMessage
+                                  key={p.number}
+                                  title={
+                                    isMatch
+                                      ? `PR #${p.number} (matches ${
+                                          issueKey || "no key"
+                                        })`
+                                      : `PR #${p.number}`
+                                  }
+                                  appearance={
+                                    isMatch ? "confirmation" : "information"
+                                  }
+                                >
+                                  <Stack space="small">
+                                    <Text>
+                                      <Link href={p.html_url} openNewTab>
+                                        {p.title || p.html_url}
+                                      </Link>
+                                    </Text>
+                                    <Text>
+                                      Branch: {p.head_ref || "(unknown)"} ·
+                                      Author: {p.author || "(unknown)"}
+                                    </Text>
+                                    <Inline space="small">
+                                      {isOwn ? (
+                                        <Button
+                                          isDisabled
+                                          tooltip="You can't approve your own PR"
+                                        >
+                                          Approve
+                                        </Button>
+                                      ) : (
+                                        <Button
+                                          onClick={() =>
+                                            approveNumber(p.number)
+                                          }
+                                        >
+                                          Approve
+                                        </Button>
+                                      )}
+                                      <Button
+                                        appearance="primary"
+                                        onClick={() => mergeNumber(p.number)}
+                                      >
+                                        Merge
+                                      </Button>
+                                    </Inline>
+                                  </Stack>
+                                </SectionMessage>
+                              );
+                            })}
+                          </Stack>
+                        )}
                       </Stack>
                     )}
                   </Stack>
-                )}
-              </Stack>
-            ))}
+                </SectionMessage>
+              );
+            })}
           </Stack>
         )}
       </Stack>

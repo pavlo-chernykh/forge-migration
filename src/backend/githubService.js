@@ -19,10 +19,13 @@ async function gh(path, init = {}) {
   return ct.includes("json") ? res.json() : res.text();
 }
 
+export const getRepo = (owner, repo) => gh(`/repos/${owner}/${repo}`);
+export const whoAmI = () => gh(`/user`);
+
 export const listRepos = () => gh("/user/repos?per_page=50");
 
 export const listOpenPRs = (owner, repo) =>
-  gh(`/repos/${owner}/${repo}/pulls?state=open`);
+  gh(`/repos/${owner}/${repo}/pulls?state=open&per_page=50`);
 
 export const approvePR = (owner, repo, number) =>
   gh(`/repos/${owner}/${repo}/pulls/${number}/reviews`, {

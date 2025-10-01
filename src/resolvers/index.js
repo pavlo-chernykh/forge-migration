@@ -13,11 +13,61 @@ import {
   prMatchesIssue,
   approvePR,
   mergePR,
+  whoAmI,
+  getRepo,
 } from "../backend/githubService";
 import { getIssue } from "../backend/jiraService";
 import { requestJira, route, asUser } from "@forge/api";
 
 const resolver = new Resolver();
+
+resolver.define("getRepoBundle", async ({ payload }) => {
+  const owner = payload?.owner;
+  const repo = payload?.repo;
+  const issueKey = (payload?.issueKey || "").trim() || undefined;
+
+  if (!owner || !repo) throw new Error("owner, repo are required");
+
+  // Only verify the issue if a key was provided
+  if (issueKey) {
+    await getIssue(issueKey); // asUser() validation
+  }
+
+  const [me, repoRaw, prsRaw] = await Promise.all([
+    whoAmI(),
+    getRepo(owner, repo),
+    listOpenPRs(owner, repo),
+  ]);
+
+  const repoInfo = {
+    full_name: repoRaw?.full_name || `${owner}/${repo}`,
+    html_url: repoRaw?.html_url || "",
+    language: repoRaw?.language || "",
+    default_branch: repoRaw?.default_branch || "",
+    visibility: repoRaw?.visibility || "",
+    stargazers_count: repoRaw?.stargazers_count ?? 0,
+    forks_count: repoRaw?.forks_count ?? 0,
+    open_issues_count: repoRaw?.open_issues_count ?? 0,
+    updated_at: repoRaw?.updated_at || "",
+  };
+
+  const prs = (Array.isArray(prsRaw) ? prsRaw : []).map((p) => ({
+    number: p.number,
+    title: p.title,
+    html_url: p.html_url,
+    head_ref: p?.head?.ref || "",
+    author: p?.user?.login || "",
+    state: p.state,
+  }));
+
+  const matchIndex = issueKey
+    ? prs.findIndex((p) =>
+        prMatchesIssue({ title: p.title, head: { ref: p.head_ref } }, issueKey)
+      )
+    : -1;
+
+  return { me: me?.login || null, repo: repoInfo, prs, matchIndex };
+});
 
 resolver.define("getText", () => "Hello, world Resolver!");
 
@@ -33,18 +83,41 @@ resolver.define("saveWebhookSecret", async ({ payload }) => {
   return { ok: true };
 });
 
+resolver.define("getIssueInfo", async ({ payload }) => {
+  const key = String(payload?.issueKey || "").trim();
+  const j = await getIssue(key); // uses asUser()
+  const f = j?.fields || {};
+  console.log("[BE] getIssueInfo", {
+    key: j?.key,
+    summary: f.summary || "",
+    status: f.status?.name || "",
+    assignee: f.assignee?.displayName || "",
+  });
+
+  if (!j?.key) throw new Error(`Issue ${key} not found`);
+  return {
+    key: j?.key,
+    summary: f.summary || "",
+    status: f.status?.name || "",
+    assignee: f.assignee?.displayName || "",
+  };
+});
+
 resolver.define("listRepos", async () => {
   console.log("[BE] listRepos start");
-  const raw = await listRepos(); // GitHub API call
+  const raw = await listRepos(); // GitHub API
   const safe = (Array.isArray(raw) ? raw : [])
     .map((x) => ({
-      id: x?.id,
+      id: x?.id ?? `${x?.owner?.login || ""}-${x?.name || ""}`,
       owner: x?.owner?.login ?? "",
       name: x?.name ?? "",
       full_name:
         x?.full_name ??
         (x?.owner?.login && x?.name ? `${x.owner.login}/${x.name}` : ""),
       html_url: x?.html_url ?? "",
+      language: x?.language ?? "", // ← add
+      default_branch: x?.default_branch ?? "", // ← add
+      visibility: x?.visibility ?? "", // ← add
     }))
     .filter((r) => r.full_name);
   console.log("[BE] listRepos done", safe.length);

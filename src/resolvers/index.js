@@ -19,6 +19,8 @@ import {
 import { getIssue } from "../backend/jiraService";
 import { requestJira, route, asUser } from "@forge/api";
 
+const ISSUE_RE = /[A-Z][A-Z0-9_]+-\d+/;
+
 const resolver = new Resolver();
 
 resolver.define("getRepoBundle", async ({ payload }) => {
@@ -103,10 +105,17 @@ resolver.define("getIssueInfo", async ({ payload }) => {
   };
 });
 
-resolver.define("listRepos", async () => {
-  console.log("[BE] listRepos start");
+resolver.define("listRepos", async ({ payload }) => {
+  const issueKey = String(payload?.issueKey || "").trim();
+  const wantMatch = ISSUE_RE.test(issueKey);
+
+  console.log("[BE] listRepos start", {
+    wantMatch,
+    issueKey: wantMatch ? issueKey : "(none)",
+  });
+
   const raw = await listRepos(); // GitHub API
-  const safe = (Array.isArray(raw) ? raw : [])
+  let items = (Array.isArray(raw) ? raw : [])
     .map((x) => ({
       id: x?.id ?? `${x?.owner?.login || ""}-${x?.name || ""}`,
       owner: x?.owner?.login ?? "",
@@ -115,13 +124,40 @@ resolver.define("listRepos", async () => {
         x?.full_name ??
         (x?.owner?.login && x?.name ? `${x.owner.login}/${x.name}` : ""),
       html_url: x?.html_url ?? "",
-      language: x?.language ?? "", // ← add
-      default_branch: x?.default_branch ?? "", // ← add
-      visibility: x?.visibility ?? "", // ← add
+      language: x?.language ?? "",
+      default_branch: x?.default_branch ?? "",
+      visibility: x?.visibility ?? "",
     }))
     .filter((r) => r.full_name);
-  console.log("[BE] listRepos done", safe.length);
-  return safe;
+
+  if (wantMatch) {
+    // Check each repo’s open PRs and keep only those with a PR matching the Issue Key.
+    const checked = await Promise.all(
+      items.map(async (r) => {
+        const prs = await listOpenPRs(r.owner, r.name);
+        const match = (prs || []).find((p) => prMatchesIssue(p, issueKey));
+        return {
+          ...r,
+          hasMatch: Boolean(match),
+          // small hint you can show in the list (optional)
+          firstMatch: match
+            ? {
+                number: match.number,
+                title: match.title,
+                html_url: match.html_url,
+              }
+            : null,
+        };
+      })
+    );
+    items = checked.filter((r) => r.hasMatch);
+  }
+
+  console.log("[BE] listRepos done", {
+    count: items.length,
+    filtered: wantMatch,
+  });
+  return items;
 });
 
 resolver.define("getRepoAndPR", async ({ payload }) => {
